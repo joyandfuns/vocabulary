@@ -30,12 +30,12 @@ func newTables(c *gin.Context) {
 	dsn := "root:Mysql_19940620@tcp(localhost:3306)/vocabulary"
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
-		c.String(http.StatusInternalServerError, "Open database error")
+		c.String(http.StatusInternalServerError, "open error" + err.Error())
 	}
 	defer db.Close()
 
 	if err := createTables(db); err != nil {
-		c.String(http.StatusInternalServerError, "createTables error")
+		c.String(http.StatusInternalServerError, "create error" + err.Error())
 	} else {
 		c.String(http.StatusOK, "createTables success")
 	}
