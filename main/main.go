@@ -44,6 +44,7 @@ func main() {
 	router.GET("/list", list)
 	router.GET("/new_tables", newTables)
 	router.GET("/search/:word", searchHandler)
+	router.POST("/add", addWordHandler)
 	router.Run(":9000")
 }
 
@@ -133,4 +134,73 @@ func searchHandler(c *gin.Context) {
 
 	// Send as JSON
 	c.JSON(200, wordInfo)
+}
+
+type WordInput struct {
+	Spelling  string   `json:"spelling"`
+	Family    string   `json:"family"`
+	Meanings  []string `json:"meanings"`
+	Examples  [][]string `json:"examples"`  // 注意，这是一个二维数组，对应于每个意义的例子
+}
+
+func addWordHandler(c *gin.Context) {
+	var input WordInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 1. 插入或查找 word_family
+	var familyID int64
+	err := db.QueryRow("SELECT family_id FROM word_family WHERE name=?", input.Family).Scan(&familyID)
+	if err != nil {
+		result, err := db.Exec("INSERT INTO word_family (name) VALUES (?)", input.Family)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to insert word family"})
+			return
+		}
+		// 获取新插入的 family_id
+		familyID, err = result.LastInsertId()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve family id"})
+			return
+		}
+	}
+
+	// 2. 使用此家族ID插入 words 表
+	result, err := db.Exec("INSERT INTO words (spelling, family_id) VALUES (?, ?)", input.Spelling, familyID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to insert word"})
+		return
+	}
+	wordID, err := result.LastInsertId()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve word id"})
+		return
+	}
+
+	// 3. 使用单词ID插入 meanings 表
+	for index, definition := range input.Meanings {
+		result, err := db.Exec("INSERT INTO meanings (word_id, definition) VALUES (?, ?)", wordID, definition)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to insert meaning"})
+			return
+		}
+		meaningID, err := result.LastInsertId()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve meaning id"})
+			return
+		}
+
+		// 4. 使用意义ID插入 examples 表
+		for _, sentence := range input.Examples[index] {
+			_, err = db.Exec("INSERT INTO examples (meaning_id, sentence) VALUES (?, ?)", meaningID, sentence)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to insert example"})
+				return
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Word added successfully"})
 }
