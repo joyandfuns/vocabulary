@@ -6,6 +6,8 @@ import (
 	"database/sql"
 
 	"github.com/gin-gonic/gin"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
 // use gin to listener on port 9000
